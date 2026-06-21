@@ -1,52 +1,66 @@
-# Bilheteria Park · Frontend
+# Bilheteria Park — Frontend
 
-Painel de gestão de uma bilheteria de parque de diversões, em **React + Vite**, consumindo a API REST conforme a coleção do Insomnia (`insomnia-bilheteria-park.json`). CSS puro, sem framework de UI.
+Interface React + Vite servida via Nginx, com dois fluxos distintos:
 
-## Rodando
+- **Site público** (`/`) — visitantes compram ingressos sem login
+- **Painel admin** (`/admin`) — gestão de eventos, lotes, clientes e vendas
+
+## Como rodar
+
+O frontend **não possui docker-compose próprio**. Ele é iniciado pelo `docker-compose.yml` do backend, que está na pasta irmã.
+
+```bash
+# A partir da pasta do BACKEND:
+docker compose up --build
+```
+
+O serviço `frontend` no compose aponta para `../bilheteria-park-frontend`.
+
+### Estrutura de pastas esperada
+
+```
+/
+├── bilheteria-park-backend/   ← docker compose up roda daqui
+└── bilheteria-park-frontend/  ← esta pasta
+```
+
+### Desenvolvimento local (sem Docker)
 
 ```bash
 npm install
-npm run dev      # http://localhost:5173
-npm run build    # build de produção em /dist
+npm run dev
 ```
 
-O backend deve estar em `http://localhost:8000` (padrão).
+O Vite proxy redireciona `/api/*` para `http://localhost:8000`.
 
-Em desenvolvimento, o frontend usa o proxy Vite em `/api` para evitar problemas de CORS com o backend local.
-Você pode alterar a URL base em tempo de execução na tela **Sistema**.
+## Fluxo de rotas
 
-## Estrutura
+| Rota | Quem acessa | Descrição |
+|---|---|---|
+| `/` | Público | Lista de eventos disponíveis |
+| `/evento/:id` | Público | Página de compra de ingresso |
+| `/admin/login` | Admin | Login (redireciona para `/admin` se já logado) |
+| `/admin` | Admin (\*) | Dashboard com resumo |
+| `/admin/pdv` | Admin (\*) | Ponto de venda interno |
+| `/admin/eventos` | Admin (\*) | CRUD de eventos |
+| `/admin/lotes` | Admin (\*) | CRUD de lotes de ingressos |
+| `/admin/clientes` | Admin (\*) | Base de clientes |
+| `/admin/sistema` | Admin (\*) | Status da conexão com a API |
 
+(\*) Redireciona para `/admin/login` se não autenticado.
+
+## Proxy nginx em produção
+
+O `nginx.conf` roteia `/api/*` para o serviço `web` (nome do container FastAPI na rede Docker):
+
+```nginx
+location /api/ {
+    proxy_pass http://web:8000/;
+}
 ```
-src/
-├── api/
-│   ├── client.js       # fetch central + tratamento de erro (inclui validação FastAPI)
-│   ├── endpoints.js    # 1 função por request do Insomnia, agrupadas por domínio
-│   └── useApi.js       # hook de loading/erro/refetch
-├── components/         # Layout, Icon, Modal e UI reutilizável
-├── context/            # ToastContext (notificações)
-├── pages/
-│   ├── Dashboard.jsx   # summary, top-events, alerts, last-sales
-│   ├── PointOfSale.jsx # catálogo + carrinho + checkout (sales)
-│   ├── Events.jsx      # CRUD + cancel + duplicate + history
-│   ├── Batches.jsx     # CRUD de lotes + close
-│   ├── Customers.jsx   # CRUD + histórico de compras
-│   └── System.jsx      # health, metrics e config de URL
-└── styles/global.css   # design system (tokens, componentes)
-```
 
-## Cobertura de endpoints
+Isso só funciona quando ambos os containers estão no mesmo `docker-compose` (o do backend).
 
-| Domínio | Endpoints |
-|---|---|
-| Sistema | `/health`, `/metrics` |
-| Eventos | `GET/POST /events/`, `GET/PUT/DELETE /events/{id}`, `/cancel`, `/duplicate`, `/history` |
-| Lotes | `GET/POST /batches/`, `PUT /batches/{id}`, `/close` |
-| Clientes | `GET/POST /customers/`, `GET/PUT /customers/{id}`, `/history` |
-| Vendas | `POST /sales/checkout`, `GET /sales/catalog` |
-| Dashboard | `/summary`, `/top-events`, `/alerts`, `/last-sales` |
+## Variáveis de build (Vite)
 
-## Notas
-
-- Os formatadores e o helper `pick()` toleram variações de nomes de campos do backend (ex.: `id`/`event_id`, `total`/`amount`), então a tela não quebra se o JSON real divergir um pouco.
-- Se houver bloqueio de **CORS**, habilite o proxy comentado em `vite.config.js` (ou libere o CORS no backend FastAPI).
+Não há variáveis de ambiente necessárias. A URL base da API é sempre `/api` — o nginx faz o proxy para o backend.
