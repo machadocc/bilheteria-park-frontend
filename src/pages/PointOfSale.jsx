@@ -3,7 +3,7 @@ import { salesApi, customersApi } from "../api/endpoints";
 import { useApi } from "../api/useApi";
 import { ApiError } from "../api/client";
 import { useToast } from "../context/ToastContext";
-import { Loading, ErrorBanner, Empty, Modal, fmt, pick } from "../components/ui";
+import { Loading, ErrorBanner, Empty, Modal, fmt, pick, maskCpfCnpj, onlyDigits } from "../components/ui";
 import { Icon } from "../components/Icon";
 
 export default function PointOfSale() {
@@ -16,6 +16,8 @@ export default function PointOfSale() {
   const [payment, setPayment] = useState("credit_card");
   const [confirming, setConfirming] = useState(false);
   const [placing, setPlacing] = useState(false);
+  const [creatingCustomer, setCreatingCustomer] = useState(false);
+  const [newCustomerForm, setNewCustomerForm] = useState({ name: "", email: "", cpf: "", phone: "" });
 
   const events = normalizeCatalog(catalog.data);
   const customerList = normalize(customers.data);
@@ -44,6 +46,24 @@ export default function PointOfSale() {
     );
   }
   function removeItem(batchId) { setCart((c) => c.filter((x) => x.batchId !== batchId)); }
+
+  async function createCustomer() {
+    if (!newCustomerForm.name || !newCustomerForm.email) {
+      toast.error("Nome e e-mail são obrigatórios.");
+      return;
+    }
+    try {
+      const res = await customersApi.create(newCustomerForm);
+      const newId = pick(res, "id", "customer_id");
+      setCustomerId(String(newId));
+      setCreatingCustomer(false);
+      setNewCustomerForm({ name: "", email: "", cpf: "", phone: "" });
+      customers.refetch();
+      toast.success("Cliente criado!");
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Erro ao criar cliente.");
+    }
+  }
 
   async function checkout() {
     setPlacing(true);
@@ -78,7 +98,18 @@ export default function PointOfSale() {
         {/* Catálogo */}
         <div>
           {catalog.loading ? <Loading label="Carregando catálogo…" /> :
-            !events.length ? <Empty icon="store" title="Catálogo vazio" hint="Cadastre eventos e lotes ativos para vendê-los aqui." /> : (
+            !events.length ? <div className="card card-pad">
+              <Empty icon="store" title="Catálogo vazio" hint="Nenhum evento com lotes disponíveis." />
+              <div className="mt" style={{ fontSize: 14, color: "var(--ink-soft)", paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+                <p><strong>Como começar:</strong></p>
+                <ol style={{ paddingLeft: 20 }}>
+                  <li>Vá para <strong>Eventos</strong> e crie um novo evento</li>
+                  <li>Acesse <strong>Lotes</strong> e crie lotes de ingressos para o evento</li>
+                  <li>Volte aqui e os ingressos aparecerão no catálogo</li>
+                  <li>Cadastre clientes em <strong>Clientes</strong> (ou crie durante a compra)</li>
+                </ol>
+              </div>
+            </div> : (
               <div className="grid" style={{ gap: 18 }}>
                 {events.map((ev) => {
                   const evName = pick(ev, "name", "event_name", "title");
@@ -161,13 +192,18 @@ export default function PointOfSale() {
 
               <div className="field">
                 <label>Cliente</label>
-                <select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-                  <option value="">Selecione o cliente…</option>
-                  {customerList.map((c) => {
-                    const id = pick(c, "id", "customer_id");
-                    return <option key={id} value={id}>{pick(c, "name")} — {pick(c, "cpf") || pick(c, "email")}</option>;
-                  })}
-                </select>
+                <div className="row" style={{ gap: 8 }}>
+                  <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} style={{ flex: 1 }}>
+                    <option value="">Selecione o cliente…</option>
+                    {customerList.map((c) => {
+                      const id = pick(c, "id", "customer_id");
+                      return <option key={id} value={id}>{pick(c, "name")} — {pick(c, "cpf") ? maskCpfCnpj(pick(c, "cpf")) : pick(c, "email")}</option>;
+                    })}
+                  </select>
+                  <button className="btn btn-ghost btn-sm" title="Criar novo cliente" onClick={() => setCreatingCustomer(true)}>
+                    <Icon name="plus" size={14} />
+                  </button>
+                </div>
               </div>
               <div className="field">
                 <label>Forma de pagamento</label>
@@ -184,6 +220,13 @@ export default function PointOfSale() {
                 <Icon name="check" size={16} /> Finalizar venda
               </button>
               {!customerId && <span className="hint" style={{ display: "block", marginTop: 8, textAlign: "center" }}>Selecione um cliente para continuar.</span>}
+              
+              {cart.length > 0 && (
+                <button className="btn btn-ghost" style={{ width: "100%", justifyContent: "center", marginTop: 8 }}
+                  onClick={() => setCart([])}>
+                  <Icon name="trash" size={16} /> Limpar carrinho
+                </button>
+              )}
             </>
           )}
         </div>
@@ -211,6 +254,35 @@ export default function PointOfSale() {
           <div className="muted" style={{ fontSize: 14 }}>
             Cliente: <strong>{customerList.find((c) => String(pick(c, "id", "customer_id")) === String(customerId)) ? pick(customerList.find((c) => String(pick(c, "id", "customer_id")) === String(customerId)), "name") : "—"}</strong>
             {" · "}Pagamento: <strong>{payment}</strong>
+          </div>
+        </Modal>
+      )}
+
+      {creatingCustomer && (
+        <Modal title="Criar novo cliente" onClose={() => setCreatingCustomer(false)}
+          footer={<>
+            <button className="btn btn-ghost" onClick={() => setCreatingCustomer(false)}>Cancelar</button>
+            <button className="btn btn-mint" onClick={createCustomer}>Criar cliente</button>
+          </>}>
+          <div className="field">
+            <label>Nome *</label>
+            <input placeholder="João Silva" value={newCustomerForm.name}
+              onChange={(e) => setNewCustomerForm((f) => ({ ...f, name: e.target.value }))} />
+          </div>
+          <div className="field">
+            <label>E-mail *</label>
+            <input type="email" placeholder="joao@email.com" value={newCustomerForm.email}
+              onChange={(e) => setNewCustomerForm((f) => ({ ...f, email: e.target.value }))} />
+          </div>
+          <div className="field">
+            <label>CPF</label>
+            <input placeholder="000.000.000-00" inputMode="numeric" maxLength={18} value={maskCpfCnpj(newCustomerForm.cpf)}
+              onChange={(e) => setNewCustomerForm((f) => ({ ...f, cpf: onlyDigits(e.target.value) }))} />
+          </div>
+          <div className="field">
+            <label>Telefone</label>
+            <input placeholder="(11) 98765-4321" value={newCustomerForm.phone}
+              onChange={(e) => setNewCustomerForm((f) => ({ ...f, phone: e.target.value }))} />
           </div>
         </Modal>
       )}

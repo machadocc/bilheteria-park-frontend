@@ -1,9 +1,9 @@
-import { useState } from "react";
-import { customersApi } from "../api/endpoints";
+import { useState, useMemo } from "react";
+import { customersApi, batchesApi, eventsApi } from "../api/endpoints";
 import { useApi } from "../api/useApi";
 import { ApiError } from "../api/client";
 import { useToast } from "../context/ToastContext";
-import { Loading, ErrorBanner, Empty, Modal, fmt, pick, StatusBadge } from "../components/ui";
+import { Loading, ErrorBanner, Empty, Modal, fmt, pick, maskCpfCnpj, onlyDigits, paymentLabel } from "../components/ui";
 import { Icon } from "../components/Icon";
 
 const EMPTY = { name: "", cpf: "", birth_date: "", phone: "", email: "" };
@@ -13,6 +13,27 @@ export default function Customers() {
   const [editing, setEditing] = useState(null);
   const [historyFor, setHistoryFor] = useState(null);
   const [q, setQ] = useState("");
+
+  // Usados só para resolver o nome do evento no histórico de compras
+  // (SaleItemOut só traz ticket_batch_id, sem nome de evento).
+  const batches = useApi(() => batchesApi.list());
+  const events = useApi(() => eventsApi.list());
+  const eventMap = useMemo(() => {
+    const map = {};
+    for (const e of normalize(events.data)) {
+      const eid = pick(e, "id", "event_id");
+      if (eid != null) map[eid] = pick(e, "name", "title");
+    }
+    return map;
+  }, [events.data]);
+  const batchEventMap = useMemo(() => {
+    const map = {};
+    for (const b of normalize(batches.data)) {
+      const bid = pick(b, "id", "batch_id");
+      if (bid != null) map[bid] = pick(b, "event_id");
+    }
+    return map;
+  }, [batches.data]);
 
   const all = normalize(data);
   const customers = all.filter((c) => {
@@ -51,7 +72,7 @@ export default function Customers() {
                   return (
                     <tr key={id}>
                       <td><div style={{ fontWeight: 600 }}>{pick(c, "name")}</div><div className="muted" style={{ fontSize: 12.5 }}>#{id}</div></td>
-                      <td className="mono">{pick(c, "cpf") || "—"}</td>
+                      <td className="mono">{pick(c, "cpf") ? maskCpfCnpj(pick(c, "cpf")) : "—"}</td>
                       <td><div>{pick(c, "email") || "—"}</div><div className="muted" style={{ fontSize: 12.5 }}>{pick(c, "phone") || ""}</div></td>
                       <td>{fmt.date(pick(c, "birth_date"))}</td>
                       <td>
@@ -73,7 +94,7 @@ export default function Customers() {
         <CustomerForm initial={editing === "new" ? EMPTY : { ...EMPTY, ...editing }} isNew={editing === "new"}
           onClose={() => setEditing(null)} onSaved={() => { setEditing(null); refetch(); }} />
       )}
-      {historyFor && <CustomerHistory customer={historyFor} onClose={() => setHistoryFor(null)} />}
+      {historyFor && <CustomerHistory customer={historyFor} eventMap={eventMap} batchEventMap={batchEventMap} onClose={() => setHistoryFor(null)} />}
     </div>
   );
 }
@@ -117,7 +138,8 @@ function CustomerForm({ initial, isNew, onClose, onSaved }) {
       </>}>
       <div className="field"><label>Nome completo</label><input value={form.name} onChange={set("name")} placeholder="Ex.: João da Silva" /></div>
       <div className="form-row">
-        <div className="field"><label>CPF</label><input value={form.cpf} onChange={set("cpf")} placeholder="000.000.000-00" disabled={!isNew} /></div>
+        <div className="field"><label>CPF/CNPJ</label><input value={maskCpfCnpj(form.cpf)} inputMode="numeric" maxLength={18}
+          onChange={(e) => setForm((f) => ({ ...f, cpf: onlyDigits(e.target.value) }))} placeholder="000.000.000-00" disabled={!isNew} /></div>
         <div className="field"><label>Nascimento</label><input type="date" value={form.birth_date} onChange={set("birth_date")} /></div>
       </div>
       <div className="form-row">
@@ -129,7 +151,7 @@ function CustomerForm({ initial, isNew, onClose, onSaved }) {
   );
 }
 
-function CustomerHistory({ customer, onClose }) {
+function CustomerHistory({ customer, eventMap, batchEventMap, onClose }) {
   const id = pick(customer, "id", "customer_id");
   const { data, loading, error, refetch } = useApi(() => customersApi.history(id), [id]);
   const rows = Array.isArray(data) ? data : (data?.items || data?.purchases || data?.history || []);
@@ -140,18 +162,26 @@ function CustomerHistory({ customer, onClose }) {
         !rows.length ? <Empty icon="cart" title="Sem compras" hint="Este cliente ainda não realizou compras." /> : (
           <div className="table-wrap">
             <table className="tbl">
-              <thead><tr><th>Pedido</th><th>Evento</th><th className="right">Qtd</th><th className="right">Total</th><th>Status</th><th>Data</th></tr></thead>
+              <thead><tr><th>Pedido</th><th>Evento</th><th className="right">Qtd</th><th className="right">Total</th><th>Pagamento</th><th>Data</th></tr></thead>
               <tbody>
-                {rows.map((s, i) => (
-                  <tr key={i}>
-                    <td className="mono">#{pick(s, "id", "sale_id") ?? "—"}</td>
-                    <td>{pick(s, "event_name", "event", "event_title") ?? "—"}</td>
-                    <td className="right mono">{fmt.int(pick(s, "quantity", "tickets"))}</td>
-                    <td className="right price">{fmt.money(pick(s, "total", "total_value", "amount", "value"))}</td>
-                    <td><StatusBadge status={pick(s, "status", "payment_status")} /></td>
-                    <td className="muted">{fmt.datetime(pick(s, "created_at", "date", "sold_at"))}</td>
-                  </tr>
-                ))}
+                {rows.map((s, i) => {
+                  // schemas.SaleOut: id, total_amount, purchase_code, payment_method,
+                  // created_at, items[{ticket_batch_id, quantity, unit_price}].
+                  const items = pick(s, "items") || [];
+                  const quantity = items.reduce((acc, it) => acc + Number(pick(it, "quantity") || 0), 0);
+                  const eventIds = [...new Set(items.map((it) => batchEventMap[pick(it, "ticket_batch_id")]).filter((v) => v != null))];
+                  const eventNames = eventIds.map((eid) => eventMap[eid] || `Evento #${eid}`);
+                  return (
+                    <tr key={pick(s, "id", "sale_id") ?? i}>
+                      <td className="mono">{pick(s, "purchase_code") || `#${pick(s, "id", "sale_id") ?? "—"}`}</td>
+                      <td>{eventNames.length ? eventNames.join(", ") : "—"}</td>
+                      <td className="right mono">{fmt.int(quantity)}</td>
+                      <td className="right price">{fmt.money(pick(s, "total_amount"))}</td>
+                      <td><span className="badge badge-gray">{paymentLabel(pick(s, "payment_method"))}</span></td>
+                      <td className="muted">{fmt.datetime(pick(s, "created_at"))}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
