@@ -1,47 +1,70 @@
 import { http } from "./client";
 
-// Mapeamento direto da coleção Insomnia "Bilheteria Park Backend".
-// Cada função corresponde a uma request da coleção.
+// Todas as rotas admin usam /admin/* e são protegidas por JWT no backend.
+// As rotas públicas (/eventos/, /compras, /auth/login) não exigem token.
 
+// ── Autenticação ──────────────────────────────────────────────────────────────
+export const authApi = {
+  login: (username, password) =>
+    http.post("/auth/login", { username, password }),
+};
+
+// ── Eventos (admin) ───────────────────────────────────────────────────────────
 export const eventsApi = {
-  list: () => http.get("/events/"), // List Events
-  create: (data) => http.post("/events/", data), // Create Event
-  get: (id) => http.get(`/events/${id}`), // Get Event
-  update: (id, data) => http.put(`/events/${id}`, data), // Update Event
-  remove: (id) => http.del(`/events/${id}`), // Delete Event
-  cancel: (id) => http.post(`/events/${id}/cancel`), // Cancel Event
-  duplicate: (id) => http.post(`/events/${id}/duplicate`), // Duplicate Event
-  history: (id) => http.get(`/events/${id}/history`), // Event History
+  list:      ()           => http.authGet("/admin/eventos"),
+  create:    (data)       => http.authPost("/admin/eventos", data),
+  get:       (id)         => http.authGet(`/admin/eventos/${id}`),    // usa rota pública se preferir
+  update:    (id, data)   => http.authPut(`/admin/eventos/${id}`, data),
+  remove:    (id)         => http.authDel(`/admin/eventos/${id}`),
+  cancel:    (id)         => http.authPost(`/admin/eventos/${id}/cancel`),
+  duplicate: (id)         => http.authPost(`/admin/eventos/${id}/duplicate`),
+  history:   (id)         => http.authGet(`/admin/eventos/${id}/history`),
 };
 
+// ── Lotes de ingressos (admin) ────────────────────────────────────────────────
 export const batchesApi = {
-  list: () => http.get("/batches/"), // List Ticket Batches
-  create: (data) => http.post("/batches/", data), // Create Ticket Batch
-  update: (id, data) => http.put(`/batches/${id}`, data), // Update Ticket Batch
-  close: (id) => http.post(`/batches/${id}/close`), // Close Ticket Batch
+  list:   ()           => http.authGet("/admin/lotes"),
+  create: (data)       => http.authPost("/admin/lotes", data),
+  update: (id, data)   => http.authPut(`/admin/lotes/${id}`, data),
+  close:  (id)         => http.authPost(`/admin/lotes/${id}/close`),
 };
 
+// ── Clientes (admin) ──────────────────────────────────────────────────────────
 export const customersApi = {
-  list: () => http.get("/customers/"), // List Customers
-  create: (data) => http.post("/customers/", data), // Create Customer
-  get: (id) => http.get(`/customers/${id}`), // Get Customer
-  update: (id, data) => http.put(`/customers/${id}`, data), // Update Customer
-  history: (id) => http.get(`/customers/${id}/history`), // Customer Purchase History
+  list:    ()           => http.authGet("/admin/clientes"),
+  create:  (data)       => http.authPost("/admin/clientes", data),
+  get:     (id)         => http.authGet(`/admin/clientes/${id}`),
+  update:  (id, data)   => http.authPut(`/admin/clientes/${id}`, data),
+  history: (id)         => http.authGet(`/admin/clientes/${id}/history`),
 };
 
+// ── PDV / Vendas (admin) ──────────────────────────────────────────────────────
+// checkout usa SaleCreate: { customer_id, payment_method, items: [{ ticket_batch_id, quantity }] }
+// catalog usa a rota pública de eventos com lotes disponíveis
 export const salesApi = {
-  checkout: (data) => http.post("/sales/checkout", data), // Create Sale
-  catalog: () => http.get("/sales/catalog"), // Event Catalog
+  checkout: (data) => http.authPost("/admin/vendas/checkout", data),
+  catalog:  ()     => http.authGet("/admin/lotes"),   // lotes com evento para montar o catálogo do PDV
+  report:   ()     => http.authGet("/admin/vendas"),
 };
 
+// ── Dashboard (admin) ─────────────────────────────────────────────────────────
 export const dashboardApi = {
-  summary: () => http.get("/dashboard/summary"), // Dashboard Summary
-  topEvents: () => http.get("/dashboard/top-events"), // Dashboard Top Events
-  alerts: () => http.get("/dashboard/alerts"), // Dashboard Alerts
-  lastSales: () => http.get("/dashboard/last-sales"), // Dashboard Last Sales
+  summary:   () => http.authGet("/admin/dashboard/summary"),
+  topEvents: () => http.authGet("/admin/dashboard/top-events"),
+  alerts:    () => http.authGet("/admin/dashboard/alerts"),
+  lastSales: () => http.authGet("/admin/dashboard/last-sales"),
 };
 
+// ── Sistema ───────────────────────────────────────────────────────────────────
 export const systemApi = {
-  health: () => http.get("/health"), // Health Check
-  metrics: () => http.raw("/metrics").then((r) => r.text()), // Prometheus Metrics (texto puro)
+  health:  () => http.get("/health"),
+  metrics: () => http.raw("/metrics").then((r) => r.text()),
+};
+
+// ── Público (sem autenticação) ────────────────────────────────────────────────
+// Usado pela Home/EventoCheckout para compradores sem login
+export const publicApi = {
+  getEventos: ()     => http.get("/eventos/"),
+  getEvento:  (id)   => http.get(`/eventos/${id}`),
+  comprar:    (data) => http.post("/compras", data),
 };
