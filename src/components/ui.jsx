@@ -99,3 +99,41 @@ export function pick(obj, ...keys) {
   for (const k of keys) if (obj[k] !== undefined && obj[k] !== null) return obj[k];
   return undefined;
 }
+
+const PAYMENT_LABELS = {
+  credit_card: "Cartão de crédito",
+  debit_card: "Cartão de débito",
+  pix: "Pix",
+  cash: "Dinheiro",
+};
+
+export function paymentLabel(method) {
+  if (!method) return "—";
+  return PAYMENT_LABELS[method] || method;
+}
+
+// ── Máscara de CPF/CNPJ ───────────────────────────────────────────────────────
+// Remove qualquer caractere que não seja dígito e limita a 14 (tamanho máx. do CNPJ).
+export function onlyDigits(value) {
+  return String(value || "").replace(/\D/g, "").slice(0, 14);
+}
+
+// Formata progressivamente enquanto o usuário digita: até 11 dígitos vira CPF
+// (000.000.000-00); a partir do 12º dígito vira CNPJ (00.000.000/0000-00).
+// Sempre guarde o valor "limpo" (apenas dígitos) no estado do form e use esta
+// função só para exibir no input — assim o payload enviado para a API já fica
+// com 11 ou 14 dígitos, do jeito que o backend espera.
+export function maskCpfCnpj(value) {
+  const digits = onlyDigits(value);
+  if (digits.length <= 11) {
+    return digits
+      .replace(/(\d{3})(\d)/, "$1.$2")
+      .replace(/(\d{3})(\d)/, "$1.$2")
+      .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+  }
+  return digits
+    .replace(/(\d{2})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d)/, "$1/$2")
+    .replace(/(\d{4})(\d{1,2})$/, "$1-$2");
+}
