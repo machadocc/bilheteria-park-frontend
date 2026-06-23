@@ -8,7 +8,6 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const isAdmin = !!token;
 
-  // Sync token with HTTP client on mount and change
   useEffect(() => {
     if (token) {
       localStorage.setItem("auth_token", token);
