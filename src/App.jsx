@@ -37,8 +37,7 @@ export default function App() {
     <AuthProvider>
       <ToastProvider>
         <BrowserRouter>
-          <Routes>
-            {/* ===== ROTAS PÚBLICAS ===== */}
+          <Routes>            
             <Route path="/" element={<Home />} />
             <Route path="/evento/:eventoId" element={<EventoCheckout />} />
             <Route path="/admin/login" element={<AdminLoginRedirect />} />

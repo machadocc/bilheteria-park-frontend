@@ -10,10 +10,6 @@ export default function Dashboard() {
   const alerts = useApi(() => dashboardApi.alerts());
   const lastSales = useApi(() => dashboardApi.lastSales());
 
-  // O endpoint /admin/dashboard/last-sales devolve apenas IDs (customer_id,
-  // ticket_batch_id). Para mostrar nome do cliente e do evento sem precisar
-  // alterar o backend agora, buscamos clientes/lotes/eventos já cadastrados
-  // e cruzamos os dados no front.
   const customers = useApi(() => customersApi.list());
   const batches = useApi(() => batchesApi.list());
   const events = useApi(() => eventsApi.list());
